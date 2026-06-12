@@ -1,0 +1,98 @@
+PageName: "Stance Wheel"
+PageDescription: |-
+  A radial stance selector for the Stance! mod, driven by your Quick Select
+  Ultimate hotbar. Hold the activation key, aim a stance with the mouse, and
+  release: the wheel finds a matching weapon in your Quick Select slots and
+  equips it, letting Stance! switch you into that stance.
+
+  Requires Stance! and Quick Select Ultimate. If either is missing, the wheel
+  stays dormant.
+
+GroupGeneralName: "General"
+GroupGeneralDescription: "Master toggle, activation key and mode, and which stances appear on the wheel."
+
+SettingEnabled: "Enable Stance Wheel"
+SettingEnabledDescription: "Turn the radial stance selector on or off."
+
+SettingActivationKey: "Activation key"
+SettingActivationKeyDescription: |-
+  Key that opens the wheel. Pick one that isn't already bound to a gameplay
+  action. Default is G, which is unbound in a vanilla control scheme.
+
+SettingActivationMode: "Activation mode"
+SettingActivationModeDescription: |-
+  Hold: hold the key, aim with the mouse, release to confirm.
+  Toggle: tap the key to open, aim, tap again to confirm.
+
+SettingIncludeSpecialStances: "Include weaponless stances"
+SettingIncludeSpecialStancesDescription: |-
+  Also show Commoner, Arcanist and Brawler. These can't be reached by equipping
+  a hotbar weapon, so the wheel sets them directly: Commoner sheathes your
+  weapon, Arcanist enters the spell stance, and Brawler bares your fists.
+
+SettingShowAllStances: "Show unavailable stances"
+SettingShowAllStancesDescription: |-
+  Show every stance even when you have no matching weapon favourited in Quick
+  Select. Unavailable stances appear dimmed and do nothing if selected. Off by
+  default, so the wheel only shows stances you can actually switch into.
+
+SettingAnnounce: "Show confirmation message"
+SettingAnnounceDescription: "Print a short message naming the stance when you make a selection."
+
+SettingGripBothForms: "GRIP: match both grip forms"
+SettingGripBothFormsDescription: |-
+  With GRIP installed, let one hotbar weapon back both of its grip stances
+  (e.g. a longsword appears under Soloist and Zweihänder). The wheel equips
+  the weapon; use GRIP's own toggle to switch grip. No effect without GRIP.
+
+SettingControllerButton: "Controller button"
+SettingControllerButtonDescription: |-
+  Optional gamepad button that opens (and confirms) the wheel, using the same
+  Hold / Toggle rule as the activation key. Leave on "None" to keep the wheel
+  keyboard-only.
+
+GroupWheelName: "Wheel"
+GroupWheelDescription: "How the radial overlay looks and behaves while it is open."
+
+SettingWheelRadius: "Wheel radius (px)"
+SettingWheelRadiusDescription: "Distance of the stance icons from the centre of the screen."
+
+SettingIconSize: "Icon size (px)"
+SettingIconSizeDescription: "On-screen size of each stance icon."
+
+SettingSelectedIconScale: "Highlight scale"
+SettingSelectedIconScaleDescription: "How much the aimed-at stance icon grows relative to the others."
+
+SettingDeadzone: "Centre dead-zone (px)"
+SettingDeadzoneDescription: |-
+  How far the mouse must travel from centre before a stance is highlighted.
+  Releasing while inside the dead-zone cancels with no change.
+
+SettingMouseSensitivity: "Mouse sensitivity"
+SettingMouseSensitivityDescription: "Multiplier on mouse movement while aiming the wheel."
+
+SettingStickAim: "Aim with right stick"
+SettingStickAimDescription: |-
+  Let the right thumbstick aim the wheel. Push the stick toward a stance to
+  highlight it; the stick's direction points the selector directly. The mouse
+  still works whenever the stick is centred.
+
+SettingStickDeadzone: "Right-stick dead-zone"
+SettingStickDeadzoneDescription: |-
+  How far the right stick must be pushed (0-1) before it starts aiming the
+  wheel. Raise this if a resting stick drifts the selection.
+
+SettingShowStanceName: "Show stance name"
+SettingShowStanceNameDescription: "Show the highlighted stance's name in the centre of the wheel."
+
+SettingFreezeCamera: "Freeze camera while open"
+SettingFreezeCameraDescription: |-
+  Stop the mouse from turning the camera while the wheel is open, so it aims the
+  wheel instead. Also suppresses attack/cast actions so the held key can't swing
+  your weapon. Restored when the wheel closes.
+
+SettingSlowMotion: "Slow motion while open"
+SettingSlowMotionDescription: "Slow the world while the wheel is open, then restore normal speed on close."
+
+SettingTimeScale: "Slow-motion time scale"
+SettingTimeScaleDescription: "World speed while the wheel is open when slow motion is on (1.0 = normal, 0.25 = quarter speed)."

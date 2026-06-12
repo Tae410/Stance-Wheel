@@ -1,0 +1,10 @@
+# Stance Wheel — a radial stance selector for the Stance! mod, driven by your
+# Quick Select Ultimate hotbar contents.
+#
+# Load order: this should load AFTER both Stance.omwscripts and
+# QuickSelectUltimate.omwscripts so their interfaces (I.Stance,
+# I.QuickSelect_Storage) are available. If either is missing the mod simply
+# stays dormant and tells you once when you press the wheel key.
+
+MENU: scripts/StanceWheel/settings.lua
+PLAYER: scripts/StanceWheel/wheel.lua
