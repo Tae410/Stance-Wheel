@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/28903146/README.md)
 # Stance Wheel
 
 A radial stance selector for **Stance!**. Hold a key, flick the mouse toward a
@@ -111,19 +110,6 @@ them directly (toggle with **Include Special Stances**):
 | Arcanist | Switches to the spell stance (`STANCE.Spell`).       |
 | Brawler  | Empties the right hand and raises fists.             |
 
-### Works with GRIP (both grip forms)
-
-If **GRIP** is installed, one hotbar weapon can back *both* of its grip stances.
-GRIP converts weapons between one- and two-handed forms at runtime and records
-the pairing in its `GRIPRecords` storage; the wheel reads that mapping and lets,
-say, a single longsword appear under **both Soloist (1H) and Zweihänder (2H)**.
-
-Pick either stance and the wheel equips that weapon. The wheel does **not** flip
-the grip itself — when you've chosen the stance whose grip isn't currently
-active, it equips the weapon and reminds you to *toggle GRIP* to switch the
-grip; Stance! then reads the target stance once GRIP swaps it. This is on by
-default (**GRIP: match both grip forms**) and has no effect without GRIP.
-
 ### Dualist is intentionally excluded
 
 The Dualist stance needs a specific **off-hand** loadout that a single hotbar
@@ -153,7 +139,6 @@ Found under **Options → Scripts → Stance Wheel**.
 | Include Special Stances  | on      | Show Commoner / Arcanist / Brawler entries. |
 | Show All Stances         | off     | Show unreachable stances dimmed instead of hiding them. |
 | Announce                 | on      | Brief on-screen message when a stance is set. |
-| GRIP: Match Both Forms   | on      | With GRIP installed, one weapon backs both its grip stances (Soloist & Zweihänder). No effect without GRIP. |
 | Controller Button        | None    | Optional gamepad button to open/confirm the wheel (same Hold/Toggle rule as the key). |
 
 ### Wheel
