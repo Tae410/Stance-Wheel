@@ -220,80 +220,25 @@ end
 
 local QS_SLOT_COUNT = 50
 
--- ─── GRIP counterpart resolution ──────────────────────────────────────────
--- GRIP converts weapons between 1H and 2H variants at runtime, writing two
--- maps into the global storage section 'GRIPRecords':
---     OldToNewRecords[origId]    = convertedId
---     NewToOldRecords[convertedId] = origId
--- We read them exactly the way Stance!'s own player/grip.lua does (a player
--- script may read a global section). A weapon's "counterpart" is its other
--- grip form: looking it up lets one hotbar slot satisfy BOTH grip stances
--- (e.g. a longsword under Soloist AND Zweihänder), with GRIP's own toggle
--- performing the actual swap after the slot is equipped.
-local function gripMaps()
-    if not getGeneral('gripBothForms', true) then return nil, nil end
-    local section
-    local okSec = pcall(function() section = storage.globalSection('GRIPRecords') end)
-    if not okSec or not section then return nil, nil end
-    local oldToNew, newToOld
-    pcall(function() oldToNew = section:getCopy('OldToNewRecords') end)
-    pcall(function() newToOld = section:getCopy('NewToOldRecords') end)
-    if type(oldToNew) ~= 'table' then oldToNew = nil end
-    if type(newToOld) ~= 'table' then newToOld = nil end
-    return oldToNew, newToOld
-end
-
--- The other grip form of recordId, or nil. An id is either an original (key in
--- OldToNew) or a converted form (key in NewToOld) — never both — so one lookup
--- in each direction is sufficient.
-local function gripCounterpart(recordId, oldToNew, newToOld)
-    if not recordId then return nil end
-    if oldToNew and oldToNew[recordId] then return oldToNew[recordId] end
-    if newToOld and newToOld[recordId] then return newToOld[recordId] end
-    return nil
-end
-
--- Classify a single record id to a stance id, or nil for the Commoner fallback
--- / a non-weapon / a classify failure.
-local function stanceIdFor(recordId)
-    local res
-    local ok = pcall(function() res = I.Stance.classifyLoadout({ rightId = recordId }) end)
-    if ok and type(res) == 'table' and res.id and res.id ~= 'commoner' then
-        return res.id
-    end
-    return nil
-end
-
--- Walk all Quick Select slots and map each stance id to the FIRST slot that can
--- satisfy it. A slot satisfies the stance of its stored weapon AND — when GRIP
--- is present — the stance of that weapon's other grip form, so one longsword can
--- back both Soloist and Zweihänder. Spell/enchant slots and items that classify
--- to the Commoner fallback (non-weapons, ammo) are ignored. Matches reached via
--- the GRIP counterpart are flagged so activation can hint to toggle GRIP.
+-- Walk all Quick Select slots and map each stance id to the FIRST slot whose
+-- stored weapon produces that stance. Spell/enchant slots and items that
+-- classify to the Commoner fallback (non-weapons, ammo) are ignored.
 local function scanQuickSelect()
-    local matches = {}   -- stanceId -> { slot, recordId, viaGrip }
+    local matches = {}   -- stanceId -> { slot = n, recordId = id }
     if not (stanceReady() and quickSelectReady()) then return matches end
-    local oldToNew, newToOld = gripMaps()
     for slot = 1, QS_SLOT_COUNT do
         local data
         local okData = pcall(function() data = I.QuickSelect_Storage.getFavoriteItemData(slot) end)
         if okData and type(data) == 'table' and data.item then
             local recordId = data.item
-
-            -- Primary: the weapon's current/stored form. Registered first so a
-            -- slot's native stance always wins over a counterpart match.
-            local primary = stanceIdFor(recordId)
-            if primary and not matches[primary] then
-                matches[primary] = { slot = slot, recordId = recordId, viaGrip = false }
-            end
-
-            -- Secondary: the GRIP counterpart's stance, if any and different.
-            local mateId = gripCounterpart(recordId, oldToNew, newToOld)
-            if mateId then
-                local mate = stanceIdFor(mateId)
-                if mate and mate ~= primary and not matches[mate] then
-                    matches[mate] = { slot = slot, recordId = recordId, viaGrip = true }
-                end
+            local res
+            local okClass = pcall(function()
+                res = I.Stance.classifyLoadout({ rightId = recordId })
+            end)
+            if okClass and type(res) == 'table' and res.id
+                and res.id ~= 'commoner'
+                and not matches[res.id] then
+                matches[res.id] = { slot = slot, recordId = recordId }
             end
         end
     end
@@ -323,7 +268,7 @@ local function buildEntries()
             else
                 local m = matches[id]
                 if m then
-                    entry = { id = id, kind = 'weapon', slot = m.slot, recordId = m.recordId, unreachable = false, viaGrip = m.viaGrip }
+                    entry = { id = id, kind = 'weapon', slot = m.slot, recordId = m.recordId, unreachable = false }
                 elseif showAll then
                     entry = { id = id, kind = 'weapon', unreachable = true }
                 end
@@ -642,7 +587,6 @@ activateEntry = function(entry)
     -- changed while the wheel was open.
     if not quickSelectReady() then return end
     local slot = entry.slot
-    local viaGrip = entry.viaGrip
     local data
     local okData = pcall(function() data = I.QuickSelect_Storage.getFavoriteItemData(slot) end)
     if not (okData and type(data) == 'table' and data.item == entry.recordId) then
@@ -654,17 +598,9 @@ activateEntry = function(entry)
             return
         end
         slot = m.slot
-        viaGrip = m.viaGrip
     end
     pcall(function() I.QuickSelect_Storage.equipSlot(slot) end)
-    local name = entry.name or entry.id
-    if viaGrip then
-        -- The slot holds this weapon's other grip form; equipping it is correct,
-        -- but Stance! won't read the target stance until GRIP swaps the grip.
-        announce(string.format('%s equipped — toggle GRIP to switch grip.', name))
-    else
-        announce(string.format('Stance: %s', name))
-    end
+    announce(string.format('Stance: %s', entry.name or entry.id))
 end
 
 -- ─── Input handling ───────────────────────────────────────────────────────

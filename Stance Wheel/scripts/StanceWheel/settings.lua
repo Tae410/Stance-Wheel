@@ -100,16 +100,6 @@ I.Settings.registerGroup {
             default = true,
         },
         {
-            key = 'gripBothForms',
-            renderer = 'checkbox',
-            name = 'SettingGripBothForms',
-            description = 'SettingGripBothFormsDescription',
-            -- When GRIP is installed, let one hotbar weapon back BOTH of its grip
-            -- stances (e.g. a longsword under Soloist and Zweihänder). No effect
-            -- without GRIP. The wheel equips the weapon; GRIP's toggle swaps grip.
-            default = true,
-        },
-        {
             key = 'controllerButton',
             renderer = 'select',
             name = 'SettingControllerButton',

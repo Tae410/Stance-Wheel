@@ -39,12 +39,6 @@ SettingShowAllStancesDescription: |-
 SettingAnnounce: "Show confirmation message"
 SettingAnnounceDescription: "Print a short message naming the stance when you make a selection."
 
-SettingGripBothForms: "GRIP: match both grip forms"
-SettingGripBothFormsDescription: |-
-  With GRIP installed, let one hotbar weapon back both of its grip stances
-  (e.g. a longsword appears under Soloist and Zweihänder). The wheel equips
-  the weapon; use GRIP's own toggle to switch grip. No effect without GRIP.
-
 SettingControllerButton: "Controller button"
 SettingControllerButtonDescription: |-
   Optional gamepad button that opens (and confirms) the wheel, using the same
