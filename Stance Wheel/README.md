@@ -92,12 +92,24 @@ priority resolver. Stance Wheel works *with* that instead of fighting it:
 
 - For each of your 50 Quick Select slots it asks
   `I.Stance.classifyLoadout({ rightId = <slot item> })`, which is the exact
-  inverse mapping: weapon record → stance id. The first slot that resolves to
-  the chosen stance is the one it equips (via `I.QuickSelect_Storage.equipSlot`,
-  which equips *and* draws). Stance!'s resolver then flips you in on its next
-  poll.
+  inverse mapping: weapon record → stance id. A matching slot is equipped (via
+  `I.QuickSelect_Storage.equipSlot`, which equips *and* draws). Stance!'s
+  resolver then flips you in on its next poll.
 - The slot is re-validated at the moment you confirm, so rearranging your bar
   while the wheel is open can't equip the wrong thing.
+
+### Choosing between multiple weapons
+
+When more than one weapon on your bar matches the stance you pick — two Marksman
+weapons under **Huntsman** (a bow and a crossbow), several one-handers under
+**Soloist**, and so on — the wheel opens a second ring showing those weapons by
+name and icon. Aim and confirm again to pick one, and it's equipped. If only a
+single weapon matches, it's equipped immediately with no extra step.
+
+In the weapon ring, aiming at the centre reads **— back —**: confirming there
+returns you to the stance ring instead of equipping anything. In Hold mode the
+two stages are two hold-and-release actions on the same key; in Toggle mode
+they're successive taps.
 
 ### Special stances (no weapon needed)
 
@@ -153,7 +165,7 @@ Found under **Options → Scripts → Stance Wheel**.
 | Aim with Right Stick| on      | Use the right thumbstick to aim (controller). |
 | Right-Stick Dead-Zone | 0.30  | Stick deflection (0-1) ignored as centre noise. |
 | Show Stance Name    | on      | Label the highlighted stance. |
-| Freeze Camera       | on      | Lock the view/combat/magic inputs while open. |
+| Freeze Camera       | on      | Lock the view (first *and* third person) plus combat/magic input while open. |
 | Slow Motion         | on      | Slow time while the wheel is open. |
 | Time Scale          | 0.25    | Simulation speed used when Slow Motion is on (1.0 = normal). |
 

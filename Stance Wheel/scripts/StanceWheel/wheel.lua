@@ -45,6 +45,7 @@ local ui      = require('openmw.ui')
 local util    = require('openmw.util')
 local storage = require('openmw.storage')
 local async   = require('openmw.async')
+local camera  = require('openmw.camera')
 local I       = require('openmw.interfaces')
 
 -- ─── Math compat ──────────────────────────────────────────────────────────
@@ -132,7 +133,8 @@ end
 local SPECIAL = { commoner = true, arcanist = true, brawler = true }
 -- Stances that can never be reached by equipping a single hotbar weapon and
 -- aren't offered as "special" entries either, so they're skipped entirely.
-local SKIP    = { dualist = true }
+-- dualist needs an off-hand loadout; muse is a non-combat "play idly" stance.
+local SKIP    = { dualist = true, muse = true }
 
 local FALLBACK_STANCES = {
     { id = 'arcanist',     displayName = 'Arcanist',     icon = 'icons/Stance/Arcanist.dds' },
@@ -220,29 +222,83 @@ end
 
 local QS_SLOT_COUNT = 50
 
--- Walk all Quick Select slots and map each stance id to the FIRST slot whose
--- stored weapon produces that stance. Spell/enchant slots and items that
--- classify to the Commoner fallback (non-weapons, ammo) are ignored.
+-- Classify a single record id to a stance id, or nil for the Commoner fallback
+-- / a non-weapon / a classify failure.
+local function stanceIdFor(recordId)
+    local res
+    local ok = pcall(function() res = I.Stance.classifyLoadout({ rightId = recordId }) end)
+    if ok and type(res) == 'table' and res.id and res.id ~= 'commoner' then
+        return res.id
+    end
+    return nil
+end
+
+-- Walk all Quick Select slots and collect, per stance, EVERY slot whose stored
+-- weapon produces that stance (in slot order, de-duplicated by record so the
+-- same weapon favourited twice isn't offered twice). Spell/enchant slots and
+-- items that classify to the Commoner fallback (non-weapons, ammo) are ignored.
+--   matches[stanceId] = { { slot = n, recordId = id }, ... }
 local function scanQuickSelect()
-    local matches = {}   -- stanceId -> { slot = n, recordId = id }
+    local matches = {}
     if not (stanceReady() and quickSelectReady()) then return matches end
     for slot = 1, QS_SLOT_COUNT do
         local data
         local okData = pcall(function() data = I.QuickSelect_Storage.getFavoriteItemData(slot) end)
         if okData and type(data) == 'table' and data.item then
             local recordId = data.item
-            local res
-            local okClass = pcall(function()
-                res = I.Stance.classifyLoadout({ rightId = recordId })
-            end)
-            if okClass and type(res) == 'table' and res.id
-                and res.id ~= 'commoner'
-                and not matches[res.id] then
-                matches[res.id] = { slot = slot, recordId = recordId }
+            local id = stanceIdFor(recordId)
+            if id then
+                local lst = matches[id]
+                if not lst then lst = {}; matches[id] = lst end
+                local dup = false
+                for _, e in ipairs(lst) do
+                    if e.recordId == recordId then dup = true; break end
+                end
+                if not dup then
+                    lst[#lst + 1] = { slot = slot, recordId = recordId }
+                end
             end
         end
     end
     return matches
+end
+
+-- Display name + inventory icon for a carried-right record id, probing the
+-- weapon-like record tables. Falls back to the raw id with no icon.
+local function recordDisplay(recordId)
+    local name, icon = recordId, nil
+    local function tryType(T)
+        if not (T and T.records) then return false end
+        local rec
+        local ok = pcall(function() rec = T.records[recordId] end)
+        if ok and rec then
+            if rec.name and rec.name ~= '' then name = rec.name end
+            if rec.icon and rec.icon ~= '' then icon = rec.icon end
+            return true
+        end
+        return false
+    end
+    local _ = tryType(types.Weapon) or tryType(types.Lockpick) or tryType(types.Probe)
+    return name, icon
+end
+
+-- Build the per-weapon entries shown in the second-stage "pick a weapon" wheel
+-- for a stance that has more than one matching hotbar slot.
+local function buildWeaponEntries(slots)
+    local out = {}
+    for _, s in ipairs(slots) do
+        local name, icon = recordDisplay(s.recordId)
+        out[#out + 1] = {
+            id = s.recordId,
+            name = name,
+            icon = icon,
+            kind = 'weaponpick',
+            slot = s.slot,
+            recordId = s.recordId,
+            unreachable = false,
+        }
+    end
+    return out
 end
 
 -- ─── Build the ordered list of wheel entries ──────────────────────────────
@@ -266,11 +322,11 @@ local function buildEntries()
                     entry = { id = id, kind = 'special', unreachable = true }
                 end
             else
-                local m = matches[id]
-                if m then
-                    entry = { id = id, kind = 'weapon', slot = m.slot, recordId = m.recordId, unreachable = false }
+                local lst = matches[id]
+                if lst and #lst > 0 then
+                    entry = { id = id, kind = 'weapon', slots = lst, unreachable = false }
                 elseif showAll then
-                    entry = { id = id, kind = 'weapon', unreachable = true }
+                    entry = { id = id, kind = 'weapon', slots = {}, unreachable = true }
                 end
             end
             if entry then
@@ -291,9 +347,19 @@ local entries         = {}
 local highlightIndex  = nil    -- 1..#entries, or nil for centre/cancel
 local accumX, accumY  = 0, 0
 
+-- Two-stage selection: 'stance' picks the stance; if it has more than one
+-- matching hotbar weapon we switch to 'weapon' to pick which one.
+local phase           = 'stance'
+local pendingStance   = nil    -- the stance entry awaiting a weapon choice
+
 -- Saved engine state to restore on close.
 local savedControlSwitch = {}  -- switchKey -> previous boolean
 local savedCombatOverride = false
+-- Camera lock (works in first AND third person): we pin yaw/pitch every frame
+-- while open, since freezing the Looking control switch alone doesn't stop the
+-- third-person free-look orbit.
+local cameraLocked    = false
+local savedYaw, savedPitch = nil, nil
 local timeScaleApplied    = false
 
 -- ─── Control-switch + time-scale helpers ──────────────────────────────────
@@ -336,6 +402,20 @@ local function freezeControls()
         pcall(I.Controls.overrideCombatControls, true)
         savedCombatOverride = true
     end
+
+    -- Capture the current view so onFrame can re-pin it. This is what makes the
+    -- lock effective in third person (and a harmless no-op in first person,
+    -- where the Looking switch already holds the view still).
+    cameraLocked = false
+    savedYaw, savedPitch = nil, nil
+    if camera and camera.getYaw and camera.getPitch then
+        local okY, y = pcall(camera.getYaw)
+        local okP, p = pcall(camera.getPitch)
+        if okY and okP then
+            savedYaw, savedPitch = y, p
+            cameraLocked = true
+        end
+    end
 end
 
 local function restoreControls()
@@ -349,6 +429,20 @@ local function restoreControls()
         pcall(I.Controls.overrideCombatControls, false)
     end
     savedCombatOverride = false
+    cameraLocked = false
+    savedYaw, savedPitch = nil, nil
+end
+
+-- Re-assert the frozen view. Called every frame while open; counteracts both
+-- first-person look and the third-person free-look orbit.
+local function pinCamera()
+    if not cameraLocked then return end
+    if savedYaw ~= nil and camera and camera.setYaw and type(camera.setYaw) == 'function' then
+        pcall(camera.setYaw, savedYaw)
+    end
+    if savedPitch ~= nil and camera and camera.setPitch and type(camera.setPitch) == 'function' then
+        pcall(camera.setPitch, savedPitch)
+    end
 end
 
 local function applyTimeScale()
@@ -438,7 +532,7 @@ local function rebuildWheel()
         end
     end
 
-    -- Centre label: the highlighted stance's name (or a hint when none).
+    -- Centre label: the highlighted entry's name (or a hint when none).
     if getWheel('showStanceName', true) then
         local labelText
         if highlightIndex and entries[highlightIndex] then
@@ -446,7 +540,7 @@ local function rebuildWheel()
             labelText = e.name or e.id
             if e.unreachable then labelText = labelText .. '  (no weapon)' end
         else
-            labelText = '— cancel —'
+            labelText = (phase == 'weapon') and '— back —' or '— cancel —'
         end
         local labelSize = math.max(18, math.floor(iconPx * 0.42))
         content[#content + 1] = {
@@ -461,6 +555,21 @@ local function rebuildWheel()
                 textShadowColor = NAME_SHADOW,
             },
         }
+        -- During weapon selection, name the stance being chosen for, just above.
+        if phase == 'weapon' and pendingStance then
+            content[#content + 1] = {
+                type = ui.TYPE.Text,
+                props = {
+                    position = util.vector2(cx, cy - labelSize - 6),
+                    anchor = util.vector2(0.5, 0.5),
+                    text = string.format('Choose weapon · %s', pendingStance.name or pendingStance.id),
+                    textSize = math.max(14, math.floor(labelSize * 0.7)),
+                    textColor = NAME_COLOR,
+                    textShadow = true,
+                    textShadowColor = NAME_SHADOW,
+                },
+            }
+        end
     end
 
     wheelElement = ui.create({
@@ -487,7 +596,7 @@ local function recomputeHighlight()
         newIndex = nil
     else
         -- angle 0 = up, increasing clockwise toward +x (matches icon layout).
-        local ang = math.atan2(accumX, -accumY)
+        local ang = atan2(accumX, -accumY)
         if ang < 0 then ang = ang + 2 * math.pi end
         local step = (2 * math.pi) / n
         local idx = math.floor(ang / step + 0.5) % n
@@ -517,6 +626,8 @@ local function openWheel()
         return
     end
     wheelOpen = true
+    phase = 'stance'
+    pendingStance = nil
     highlightIndex = nil
     accumX, accumY = 0, 0
     if getWheel('freezeCamera', true) then freezeControls() end
@@ -524,19 +635,18 @@ local function openWheel()
     rebuildWheel()
 end
 
--- Forward declaration; defined below.
-local activateEntry
-
-local function closeWheel(confirm)
+-- Tear down the wheel and restore engine state. Does NOT itself activate a
+-- selection — confirmSelection() drives what happens on a choice.
+local function closeWheel()
     if not wheelOpen then return end
-    local chosen = (confirm and highlightIndex) and entries[highlightIndex] or nil
     wheelOpen = false
     if wheelElement then wheelElement:destroy(); wheelElement = nil end
     restoreControls()
     restoreTimeScale()
+    phase = 'stance'
+    pendingStance = nil
     highlightIndex = nil
     accumX, accumY = 0, 0
-    if chosen then activateEntry(chosen) end
 end
 
 -- ─── Activation ───────────────────────────────────────────────────────────
@@ -571,36 +681,84 @@ local function doSpecial(id)
     end
 end
 
-activateEntry = function(entry)
-    if not entry then return end
+-- Equip a stance's weapon by slot, re-validating against the live hotbar (which
+-- may have changed while the wheel was open). On a stale slot we re-scan and
+-- take the first current match for the stance.
+local function equipSlotForStance(stanceId, slot, recordId, stanceName)
+    if not quickSelectReady() then return end
+    local data
+    local okData = pcall(function() data = I.QuickSelect_Storage.getFavoriteItemData(slot) end)
+    if not (okData and type(data) == 'table' and data.item == recordId) then
+        local lst = scanQuickSelect()[stanceId]
+        if not lst or #lst == 0 then
+            announce(string.format('No %s weapon in your Quick Select slots.', stanceName))
+            return
+        end
+        slot = lst[1].slot
+    end
+    pcall(function() I.QuickSelect_Storage.equipSlot(slot) end)
+    announce(string.format('Stance: %s', stanceName))
+end
+
+-- Confirm the current highlight. Centre (no highlight) cancels in the stance
+-- phase and steps back in the weapon phase. A multi-weapon stance opens the
+-- weapon phase instead of closing.
+local function confirmSelection()
+    if not wheelOpen then return end
+    local entry = (highlightIndex and entries[highlightIndex]) or nil
+
+    if phase == 'weapon' then
+        if not entry then
+            -- Back to the stance wheel.
+            entries = buildEntries()
+            phase = 'stance'
+            pendingStance = nil
+            highlightIndex = nil
+            accumX, accumY = 0, 0
+            rebuildWheel()
+            return
+        end
+        local stanceId   = pendingStance and pendingStance.id
+        local stanceName = (pendingStance and (pendingStance.name or pendingStance.id)) or entry.id
+        local slot, recordId = entry.slot, entry.recordId
+        closeWheel()
+        equipSlotForStance(stanceId, slot, recordId, stanceName)
+        return
+    end
+
+    -- phase == 'stance'
+    if not entry then closeWheel(); return end
+    local name = entry.name or entry.id
     if entry.unreachable then
-        announce(string.format('No %s weapon in your Quick Select slots.', entry.name or entry.id))
+        closeWheel()
+        announce(string.format('No %s weapon in your Quick Select slots.', name))
         return
     end
     if entry.kind == 'special' then
+        closeWheel()
         doSpecial(entry.id)
         return
     end
-    -- Weapon stance: hand the matched slot to Quick Select, which equips and
-    -- draws it; Stance!'s resolver then flips you into the stance on its next
-    -- poll. We re-validate the slot at activation time in case the hotbar
-    -- changed while the wheel was open.
-    if not quickSelectReady() then return end
-    local slot = entry.slot
-    local data
-    local okData = pcall(function() data = I.QuickSelect_Storage.getFavoriteItemData(slot) end)
-    if not (okData and type(data) == 'table' and data.item == entry.recordId) then
-        -- The slot moved; re-scan and find a fresh match for this stance.
-        local matches = scanQuickSelect()
-        local m = matches[entry.id]
-        if not m then
-            announce(string.format('No %s weapon in your Quick Select slots.', entry.name or entry.id))
-            return
-        end
-        slot = m.slot
+    -- Weapon stance.
+    local slots = entry.slots or {}
+    if #slots > 1 then
+        -- Drill into a weapon picker for this stance.
+        pendingStance = entry
+        entries = buildWeaponEntries(slots)
+        phase = 'weapon'
+        highlightIndex = nil
+        accumX, accumY = 0, 0
+        rebuildWheel()
+        return
     end
-    pcall(function() I.QuickSelect_Storage.equipSlot(slot) end)
-    announce(string.format('Stance: %s', entry.name or entry.id))
+    local s = slots[1]
+    local stanceId = entry.id
+    closeWheel()
+    if s then
+        equipSlotForStance(stanceId, s.slot, s.recordId, name)
+    else
+        announce(string.format('No %s weapon in your Quick Select slots.', name))
+    end
 end
 
 -- ─── Input handling ───────────────────────────────────────────────────────
@@ -610,27 +768,28 @@ local function isActivationKey(key)
 end
 
 -- Shared open/confirm flow so keyboard and controller behave identically under
--- both Hold and Toggle modes.
+-- both Hold and Toggle modes, across both selection phases.
 local function handleActivatePress()
     local mode = getGeneral('activationMode', 'Hold')
     if mode == 'Toggle' then
         if wheelOpen then
-            closeWheel(true)              -- second tap confirms
+            confirmSelection()            -- each tap confirms the current phase
         elseif canOpen() then
             openWheel()
         end
         return
     end
-    -- Hold mode: ignore auto-repeat; open only on the first press.
+    -- Hold mode: a press opens the wheel the first time; once open (including the
+    -- weapon phase) further presses just re-arm — the matching release confirms.
     if wheelKeyHeld then return end
     wheelKeyHeld = true
-    if canOpen() then openWheel() end
+    if not wheelOpen and canOpen() then openWheel() end
 end
 
 local function handleActivateRelease()
     wheelKeyHeld = false
     if getGeneral('activationMode', 'Hold') == 'Hold' and wheelOpen then
-        closeWheel(true)
+        confirmSelection()
     end
 end
 
@@ -675,9 +834,13 @@ local function onFrame(dt)
     if (I.UI and I.UI.getMode and I.UI.getMode() ~= nil)
         or (core.isWorldPaused and core.isWorldPaused()) then
         wheelKeyHeld = false
-        closeWheel(false)
+        closeWheel()
         return
     end
+
+    -- Hold the frozen view (effective in first AND third person).
+    pinCamera()
+
     local sens = tonumber(getWheel('mouseSensitivity', 1.0)) or 1.0
 
     -- Right stick takes priority when actively deflected: its position is
@@ -721,8 +884,12 @@ local function hardReset()
     end
     wheelOpen = false
     wheelKeyHeld = false
+    phase = 'stance'
+    pendingStance = nil
     highlightIndex = nil
     accumX, accumY = 0, 0
+    cameraLocked = false
+    savedYaw, savedPitch = nil, nil
     stanceCatalogue = nil
 end
 
@@ -732,7 +899,7 @@ return {
         version = 1,
         -- Lets other scripts open/close the wheel or query state if desired.
         open = function() if canOpen() then openWheel() end end,
-        close = function(confirm) closeWheel(confirm and true or false) end,
+        close = function(confirm) if confirm then confirmSelection() else closeWheel() end end,
         isOpen = function() return wheelOpen end,
     },
     engineHandlers = {
